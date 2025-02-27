@@ -21,7 +21,8 @@ const restapify = new Restapify({
   port: 4001,
   baseUrl: '/',
   states: [],
-  hotWatch: true
+  hotWatch: true,
+  proxyBaseUrl: ''
 })
 
 restapify.run()

@@ -2,5 +2,6 @@
     "rootDir": "./www-dev",
     "publicPath": "",
     "port": 4001,
-    "states": []
+    "states": [],
+    "proxyBaseUrl": "https://public-web-api-dev.trr.se"
 }

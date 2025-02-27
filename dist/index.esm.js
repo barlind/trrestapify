@@ -1066,7 +1066,9 @@ var Restapify = /*#__PURE__*/_createClass(function Restapify(_ref) {
     _ref$states = _ref.states,
     _states = _ref$states === void 0 ? [] : _ref$states,
     _ref$hotWatch = _ref.hotWatch,
-    _hotWatch = _ref$hotWatch === void 0 ? true : _ref$hotWatch;
+    _hotWatch = _ref$hotWatch === void 0 ? true : _ref$hotWatch,
+    _ref$proxyBaseUrl = _ref.proxyBaseUrl,
+    proxyBaseUrl = _ref$proxyBaseUrl === void 0 ? '' : _ref$proxyBaseUrl;
   _classCallCheck(this, Restapify);
   _defineProperty(this, "eventCallbacksStore", {});
   _defineProperty(this, "app", void 0);
@@ -1085,6 +1087,7 @@ var Restapify = /*#__PURE__*/_createClass(function Restapify(_ref) {
   _defineProperty(this, "publicPath", void 0);
   _defineProperty(this, "states", []);
   _defineProperty(this, "hotWatch", void 0);
+  _defineProperty(this, "proxyBaseUrl", void 0);
   _defineProperty(this, "listRouteFiles", function () {
     _this.listedRouteFiles = _getRouteFiles(_this.rootDir);
   });
@@ -1127,15 +1130,19 @@ var Restapify = /*#__PURE__*/_createClass(function Restapify(_ref) {
         return _regeneratorRuntime.wrap(function _callee$(_context) {
           while (1) switch (_context.prev = _context.next) {
             case 0:
-              if (!(req.originalUrl === "/")) {
+              if (!(req.originalUrl === "/" || req.originalUrl === "/favicon.ico")) {
                 _context.next = 2;
                 break;
               }
               return _context.abrupt("return", next());
             case 2:
+              _context.prev = 2;
+              if (!(_this.proxyBaseUrl != '')) {
+                _context.next = 24;
+                break;
+              }
               console.log("No matching local route for ".concat(req.method, " ").concat(chalk.blue(req.originalUrl), ", forwarding..."));
-              _context.prev = 3;
-              proxyUrl = "https://public-web-api-dev.trr.se".concat(req.originalUrl);
+              proxyUrl = "".concat(_this.proxyBaseUrl).concat(req.originalUrl);
               forwardedHeaders = Object.entries(req.headers).reduce(function (acc, _ref3) {
                 var _ref4 = _slicedToArray(_ref3, 2),
                   key = _ref4[0],
@@ -1147,43 +1154,44 @@ var Restapify = /*#__PURE__*/_createClass(function Restapify(_ref) {
                 }
                 return acc;
               }, {});
-              _context.next = 8;
+              _context.next = 9;
               return fetch(proxyUrl, {
                 method: req.method,
                 headers: forwardedHeaders,
                 body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body
               });
-            case 8:
+            case 9:
               proxyResponse = _context.sent;
               res.appendHeader("response-was-proxied", "true");
-              _context.next = 12;
+              _context.next = 13;
               return proxyResponse.text();
-            case 12:
+            case 13:
               proxyText = _context.sent;
-              _context.prev = 13;
+              _context.prev = 14;
               proxyData = JSON.parse(proxyText);
-              _context.next = 21;
+              _context.next = 22;
               break;
-            case 17:
-              _context.prev = 17;
-              _context.t0 = _context["catch"](13);
-              console.error("Failed to parse JSON from proxy for ".concat(req.originalUrl, ":"), _context.t0);
-              return _context.abrupt("return", res.status(500).send("Invalid JSON received from proxy request to ".concat(req.originalUrl, ". Response was: ").concat(proxyText)));
-            case 21:
+            case 18:
+              _context.prev = 18;
+              _context.t0 = _context["catch"](14);
+              console.error("Failed to parse JSON from proxy ".concat(_this.proxyBaseUrl, " for ").concat(req.originalUrl, ":"), _context.t0);
+              return _context.abrupt("return", res.status(500).send("Invalid JSON received from proxy ".concat(_this.proxyBaseUrl, " request to ").concat(req.originalUrl, ". Response was: '").concat(proxyText, "'")));
+            case 22:
               res.status(proxyResponse.status).json(proxyData);
-              console.log("Served ".concat(chalk.italic("forwarded content"), " for ").concat(chalk.blue(req.originalUrl), " with status ").concat(proxyResponse.status, "."));
-              _context.next = 29;
+              console.log("Served ".concat(chalk.italic("forwarded content"), " for ").concat(chalk.blue(req.originalUrl), " with status ").concat(proxyResponse.status, " from ").concat(_this.proxyBaseUrl, "."));
+            case 24:
+              _context.next = 30;
               break;
-            case 25:
-              _context.prev = 25;
-              _context.t1 = _context["catch"](3);
+            case 26:
+              _context.prev = 26;
+              _context.t1 = _context["catch"](2);
               console.error("Proxy request failed:", _context.t1);
               res.status(500).send("Failed to get result from proxy request to ".concat(req.originalUrl, ". Error was ").concat(_context.t1));
-            case 29:
+            case 30:
             case "end":
               return _context.stop();
           }
-        }, _callee, null, [[3, 25], [13, 17]]);
+        }, _callee, null, [[2, 26], [14, 18]]);
       }))()["catch"](next);
     });
   });
@@ -1566,6 +1574,7 @@ var Restapify = /*#__PURE__*/_createClass(function Restapify(_ref) {
   this.port = _port;
   this.publicPath = _baseUrl;
   this.hotWatch = _hotWatch;
+  this.proxyBaseUrl = proxyBaseUrl;
   this.states = _states.filter(function (state) {
     return state.state !== undefined;
   });
@@ -1607,18 +1616,17 @@ var consoleError = function consoleError(message) {
   var errorPrepend = chalk.red.bold.underline('❌ERROR:');
   console.log("".concat(errorPrepend, " ").concat(message));
 };
-var getInstanceOverviewOutput = function getInstanceOverviewOutput(port, publicPath) {
+var getInstanceOverviewOutput = function getInstanceOverviewOutput(port, publicPath, proxyBaseUrl) {
   if (!publicPath.startsWith('/')) {
     publicPath = "/".concat(publicPath);
   }
   var runningTitle = chalk.magenta('🚀 Restapify is running:');
   var publicPathTitle = chalk.bold('- 📦API entry point:');
   var publicPathLink = chalk.blueBright("http://localhost:".concat(port).concat(publicPath));
-  chalk.bold('- 🎛 Dashboard:');
-  chalk.blueBright("http://localhost:".concat(port, "/restapify"));
   var publicPathOutput = "".concat(publicPathTitle, " ").concat(publicPathLink);
+  var proxyBaseUrlOutput = proxyBaseUrl != '' ? "\n- Fallback proxy: ".concat(chalk.blueBright(proxyBaseUrl)) : '';
   var killProcessInfo = chalk.yellowBright('Use Ctrl+C to quit this process');
-  return boxen("".concat(runningTitle, "\n\n").concat(publicPathOutput, "\n\n").concat(killProcessInfo), {
+  return boxen("".concat(runningTitle, "\n\n").concat(publicPathOutput).concat(proxyBaseUrlOutput, "\n\n").concat(killProcessInfo), {
     padding: 1,
     borderColor: 'magenta'
   });
@@ -1663,7 +1671,7 @@ var runServer = function runServer(config) {
     var servedRoutesOutput = getRoutesListOutput(rpfy.getServedRoutes(), rpfy.publicPath);
     console.log(servedRoutesOutput);
     console.log('\n');
-    console.log(getInstanceOverviewOutput(rpfy.port, rpfy.publicPath));
+    console.log(getInstanceOverviewOutput(rpfy.port, rpfy.publicPath, rpfy.proxyBaseUrl));
   });
   rpfy.on('server:restart', function () {
     console.log(chalk.green('✅ API updated!'));
@@ -1769,12 +1777,14 @@ var startServerFromConfig = function startServerFromConfig(configFilePath, confi
 
 var cli = function cli(cliArgs) {
   var program = new Command();
-  program.version(version, '-v, --version', 'output the current version').option('-p, --port <number>', 'port to serve Restapify instance').option('-b, --baseUrl <string>', 'base url to serve the API').option('-o, --open', 'open dashboard on server start', true).option('--no-open', 'don\'t open dashboard on server start');
-  program.command('serve <rootDir>').description('serve a mocked API from folder <rootDir>').action(function (rootDir) {
+  program.version(version, '-v, --version', 'output the current version').option('-p, --port <number>', 'port to serve Restapify instance').option('-b, --baseUrl <string>', 'base url to serve the API');
+  program.command('serve <rootDir> [proxyBaseUrl]').description('serve a mocked API from folder <rootDir> with an optional [proxyBaseUrl]').action(function (rootDir) {
+    var proxyBaseUrl = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 'https://public-web-api-dev.trr.se';
     startServer({
       rootDir: path.resolve(rootDir),
       baseUrl: '/',
-      port: 4001
+      port: 4001,
+      proxyBaseUrl: proxyBaseUrl
     });
   });
   program.command('list <rootDir>').description('list all routes to serve from folder <rootDir>').action(function (rootDir) {
@@ -1782,12 +1792,6 @@ var cli = function cli(cliArgs) {
   });
   program.arguments('[pathToConfig]').action(function () {
     var pathToConfig = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : './restapify.config.json';
-    // startServer({
-    //   rootDir: path.resolve("./www-dev"),
-    //   baseUrl: '/',
-    //   port: 4001,
-    // })
-
     var configPath = path.resolve(pathToConfig);
     var configFileExists = fs.existsSync(configPath);
     if (!configFileExists) {
@@ -1815,7 +1819,8 @@ var restapify = new Restapify({
   port: 4001,
   baseUrl: '/',
   states: [],
-  hotWatch: true
+  hotWatch: true,
+  proxyBaseUrl: ''
 });
 restapify.run();
 

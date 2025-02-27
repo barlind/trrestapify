@@ -43,7 +43,7 @@ export const consoleError = (message: string): void => {
   console.log(`${errorPrepend} ${message}`)
 }
 
-export const getInstanceOverviewOutput = (port: number, publicPath: string): string => {
+export const getInstanceOverviewOutput = (port: number, publicPath: string, proxyBaseUrl: string): string => {
   if (!publicPath.startsWith('/')) {
     publicPath = `/${publicPath}`
   }
@@ -51,12 +51,11 @@ export const getInstanceOverviewOutput = (port: number, publicPath: string): str
   const runningTitle = chalk.magenta('🚀 Restapify is running:')
   const publicPathTitle = chalk.bold('- 📦API entry point:')
   const publicPathLink = chalk.blueBright(`http://localhost:${port}${publicPath}`)
-  const dashboardURLTitle = chalk.bold('- 🎛 Dashboard:')
-  const dashboardURLLink = chalk.blueBright(`http://localhost:${port}/restapify`)
   const publicPathOutput = `${publicPathTitle} ${publicPathLink}`
-  const dashboardURLOutput = `${dashboardURLTitle} ${dashboardURLLink}`
+  const proxyBaseUrlOutput = proxyBaseUrl != '' ? `\n- Fallback proxy: ${chalk.blueBright(proxyBaseUrl)}` : ''
+  
   const killProcessInfo = chalk.yellowBright('Use Ctrl+C to quit this process')
-  return boxen(`${runningTitle}\n\n${publicPathOutput}\n\n${killProcessInfo}`, { padding: 1, borderColor: 'magenta' })
+  return boxen(`${runningTitle}\n\n${publicPathOutput}${proxyBaseUrlOutput}\n\n${killProcessInfo}`, { padding: 1, borderColor: 'magenta' })
 }
 
 export const onRestapifyInstanceError = (
@@ -117,7 +116,8 @@ export const runServer = (config: RestapifyParams): void => {
     console.log('\n')
     console.log(getInstanceOverviewOutput(
       rpfy.port,
-      rpfy.publicPath
+      rpfy.publicPath,
+      rpfy.proxyBaseUrl
     ))
   })
 

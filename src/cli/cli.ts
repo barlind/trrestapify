@@ -16,18 +16,17 @@ export const cli = (cliArgs: string[]): void => {
     .version(packageJson.version, '-v, --version', 'output the current version')
     .option('-p, --port <number>', 'port to serve Restapify instance')
     .option('-b, --baseUrl <string>', 'base url to serve the API')
-    .option('-o, --open', 'open dashboard on server start', true)
-    .option('--no-open', 'don\'t open dashboard on server start')
-
+    
   program
-    .command('serve <rootDir>')
-    .description('serve a mocked API from folder <rootDir>')
-    .action((rootDir): void => {
-      startServer({
-        rootDir: path.resolve(rootDir),
-        baseUrl: '/',
-        port: 4001,
-      })
+    .command('serve <rootDir> [proxyBaseUrl]')
+    .description('serve a mocked API from folder <rootDir> with an optional [proxyBaseUrl]')
+    .action((rootDir, proxyBaseUrl = 'https://public-web-api-dev.trr.se'): void => {
+        startServer({
+          rootDir: path.resolve(rootDir),
+          baseUrl: '/',
+          port: 4001,
+          proxyBaseUrl
+        })
     })
 
   program
@@ -40,13 +39,7 @@ export const cli = (cliArgs: string[]): void => {
   program
     .arguments('[pathToConfig]')
     .action((pathToConfig: string = './restapify.config.json'): void => {
-      
-      // startServer({
-      //   rootDir: path.resolve("./www-dev"),
-      //   baseUrl: '/',
-      //   port: 4001,
-      // })
-
+    
       const configPath = path.resolve(pathToConfig)
       const configFileExists = fs.existsSync(configPath)
 

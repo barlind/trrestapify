@@ -4,7 +4,6 @@ import * as path from 'path'
 import express, { Application, Request, Response, NextFunction } from 'express'
 import cors from 'cors'
 import * as http from 'http'
-import open from 'open'
 import * as chokidar from 'chokidar'
 import nocache from 'nocache'
 
@@ -55,18 +54,21 @@ class Restapify {
   public publicPath: string
   public states: IPrivateRouteState[] = []
   public hotWatch: boolean
+  public proxyBaseUrl: string
 
   constructor({
     rootDir,
     port = DEFAULT_PORT,
     baseUrl = '/',
     states = [],
-    hotWatch = true
+    hotWatch = true,
+    proxyBaseUrl = ''
   }: IRestapifyParams) {
     this.rootDir = rootDir
     this.port = port
     this.publicPath = baseUrl
     this.hotWatch = hotWatch
+    this.proxyBaseUrl = proxyBaseUrl
     this.states = states.filter(state => {
       return state.state !== undefined
     }) as IPrivateRouteState[]
@@ -117,56 +119,58 @@ class Restapify {
         if (req.originalUrl === "/" || req.originalUrl === "/favicon.ico") {
           return next();
         }
-    
-        console.log(
-          `No matching local route for ${req.method} ${chalk.blue(
-            req.originalUrl
-          )}, forwarding...`
-        );
+
         try {
-          const proxyUrl = `https://public-web-api-dev.trr.se${req.originalUrl}`;
-          const forwardedHeaders: Record<string, string> = Object.entries(req.headers).reduce(
-            (acc, [key, value]) => {
-              if (typeof value === "string") {
-                acc[key] = value;
-              } else if (Array.isArray(value)) {
-                acc[key] = value.join(", ");
-              }
-              return acc;
-            },
-            {} as Record<string, string>
-          );
-    
-          const proxyResponse = await fetch(proxyUrl, {
-            method: req.method,
-            headers: forwardedHeaders,
-            body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body,
-          });
-    
-          res.appendHeader("response-was-proxied", "true");
-    
-          const proxyText = await proxyResponse.text();
-          let proxyData;
-          try {
-            proxyData = JSON.parse(proxyText);
-          } catch (jsonError) {
-            console.error(
-              `Failed to parse JSON from proxy for ${req.originalUrl}:`,
-              jsonError
+          if (this.proxyBaseUrl != '') {
+            console.log(
+              `No matching local route for ${req.method} ${chalk.blue(
+                req.originalUrl
+              )}, forwarding...`
             );
-            return res
-              .status(500)
-              .send(
-                `Invalid JSON received from proxy request to ${req.originalUrl}. Response was: '${proxyText}'`
+            const proxyUrl = `${this.proxyBaseUrl}${req.originalUrl}`;
+            const forwardedHeaders: Record<string, string> = Object.entries(req.headers).reduce(
+              (acc, [key, value]) => {
+                if (typeof value === "string") {
+                  acc[key] = value;
+                } else if (Array.isArray(value)) {
+                  acc[key] = value.join(", ");
+                }
+                return acc;
+              },
+              {} as Record<string, string>
+            );
+
+            const proxyResponse = await fetch(proxyUrl, {
+              method: req.method,
+              headers: forwardedHeaders,
+              body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body,
+            });
+
+            res.appendHeader("response-was-proxied", "true");
+
+            const proxyText = await proxyResponse.text();
+            let proxyData;
+            try {
+              proxyData = JSON.parse(proxyText);
+            } catch (jsonError) {
+              console.error(
+                `Failed to parse JSON from proxy ${this.proxyBaseUrl} for ${req.originalUrl}:`,
+                jsonError
               );
+              return res
+                .status(500)
+                .send(
+                  `Invalid JSON received from proxy ${this.proxyBaseUrl} request to ${req.originalUrl}. Response was: '${proxyText}'`
+                );
+            }
+
+            res.status(proxyResponse.status).json(proxyData);
+            console.log(
+              `Served ${chalk.italic("forwarded content")} for ${chalk.blue(
+                req.originalUrl
+              )} with status ${proxyResponse.status} from ${this.proxyBaseUrl}.`
+            );
           }
-    
-          res.status(proxyResponse.status).json(proxyData);
-          console.log(
-            `Served ${chalk.italic("forwarded content")} for ${chalk.blue(
-              req.originalUrl
-            )} with status ${proxyResponse.status}.`
-          );
         } catch (err) {
           console.error("Proxy request failed:", err);
           res
@@ -180,7 +184,7 @@ class Restapify {
 
   }
 
-  
+
   private readonly configInternalApi = (): void => {
     const {
       routes,
@@ -375,7 +379,7 @@ class Restapify {
       if (header) {
         res.header(header)
       }
-    
+
       // 1. Check for custom header
       const userId = this.getUserId(req.headers['authorization'] ?? '') // or whatever header key
       if (userId && routeData.directoryPath) {
@@ -639,6 +643,7 @@ export interface IRestapifyParams {
   baseUrl?: string;
   states?: IRouteState[];
   hotWatch?: boolean;
+  proxyBaseUrl?: string
 }
 
 export interface IPrivateRouteState extends Omit<IRouteState, 'state'> {

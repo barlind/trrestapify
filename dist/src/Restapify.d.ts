@@ -12,7 +12,8 @@ declare class Restapify {
     publicPath: string;
     states: IPrivateRouteState[];
     hotWatch: boolean;
-    constructor({ rootDir, port, baseUrl, states, hotWatch }: IRestapifyParams);
+    proxyBaseUrl: string;
+    constructor({ rootDir, port, baseUrl, states, hotWatch, proxyBaseUrl }: IRestapifyParams);
     private readonly listRouteFiles;
     private readonly configHotWatch;
     private readonly configServer;
@@ -71,6 +72,7 @@ export interface IRestapifyParams {
     baseUrl?: string;
     states?: IRouteState[];
     hotWatch?: boolean;
+    proxyBaseUrl?: string;
 }
 export interface IPrivateRouteState extends Omit<IRouteState, 'state'> {
     state: string;
