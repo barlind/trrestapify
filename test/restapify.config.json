@@ -1,0 +1,12 @@
+{
+  "rootDir": "./api",
+  "publicPath": "api/",
+  "port": 6768,
+  "states": [
+    {
+      "route": "/users/[userid]",
+      "method": "DELETE",
+      "state": "ERR"
+    }
+  ]
+}

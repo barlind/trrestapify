@@ -1,0 +1,8 @@
+[
+  "#for userName in ['[#faker:name:firstName]', '[#faker:name:firstName]', '[#faker:name:firstName]']",
+  {
+    "name": "[userName]",
+    "website": "https://[userName].[#faker:internet:domainSuffix]"
+  },
+  "#endfor"
+]

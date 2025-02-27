@@ -1,0 +1,6 @@
+{
+    "rootDir": "./www-dev",
+    "publicPath": "",
+    "port": 4001,
+    "states": []
+}

@@ -1,0 +1,13 @@
+node_modules/
+
+.parcel-cache/
+
+# yarn
+yarn-error.log
+
+# jest
+coverage/
+
+.vscode/
+
+www-dev/
