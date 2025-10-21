@@ -12,7 +12,8 @@
   "scripts": {
     "workspaces:test": "npm test --workspaces",
     "lint": "echo 'no root lint; run in workspaces'",
-    "build": "echo 'no root build; legacy sources removed'"
+    "build": "echo 'no root build; legacy sources removed'",
+    "sanitize:node_modules": "chmod -RN node_modules && find node_modules -type d -exec chmod 755 {} + && find node_modules -type f -exec chmod 644 {} + && find node_modules/.bin -type f -exec chmod 755 {} +"
   },
   "publishConfig": {
     "access": "public"

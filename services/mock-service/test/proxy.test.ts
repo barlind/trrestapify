@@ -29,7 +29,7 @@ beforeAll(async () => {
   await new Promise<void>(resolve => proxyServer.listen(proxyPort, resolve))
   process.env.PROXY_BASE_URL = `http://localhost:${proxyPort}`
   process.env.LOG_LEVEL = 'error' // keep test output clean
-  process.env.FALLBACK_BRANCH = '___no_fallback___'
+  process.env.DEFAULT_BRANCH = '___no_fallback___'
   // Create empty worktree folder for rewriteBranch so branch load succeeds but contains no routes
   const worktreesRoot = path.join(process.cwd(), '.worktrees')
   const rewriteDir = path.join(worktreesRoot, 'rewriteBranch')

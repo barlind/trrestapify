@@ -3,7 +3,7 @@
 ## 1. Completed Work
 - Monorepo structure finalized: `packages/core-lib`, `services/mock-service`, `archive/legacy` retained for reference only.
 - Core extraction: route loading, variable casting, for-loop & query string replacement lives in `core-lib`.
-- Implemented `BranchWorktreeManager` with shallow worktree creation, dynamic allow‑list, fallback branch logic, and forced reload.
+- Implemented `BranchWorktreeManager` with shallow worktree creation, dynamic allow‑list, default branch fallback logic, and forced reload.
 - Branch-aware serving in `mock-service` via headers:
    - `x-target-branch` selects branch (with fallback to configured default).
    - `x-branch-refresh: true` forces branch cache & worktree refresh.
@@ -32,10 +32,10 @@
 
 ## 3. Branch-aware Serving Design (Implemented)
 Request flow:
-1. Read header `x-target-branch` (fallback to configured `FALLBACK_BRANCH`).
+1. Read header `x-target-branch` (fallback to configured `DEFAULT_BRANCH`).
 2. `BranchWorktreeManager.ensure(branch)` produces/updates shallow worktree directory.
 3. Load or reuse cached route map for target branch.
-4. Match incoming path + method; if miss and target ≠ fallback, retry fallback branch.
+4. Match incoming path + method; if miss and target ≠ default, retry default branch.
 5. Respond with JSON; headers include `x-branch-served` and `x-branch-fallback` when fallback applies.
 6. If header `x-branch-refresh: true` present, purge cache & re-fetch before matching.
 

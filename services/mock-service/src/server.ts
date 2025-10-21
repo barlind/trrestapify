@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express'
+import cors from 'cors'
 // Using relative path to core-lib dist to satisfy Vitest/Vite module resolution in monorepo during tests.
 // TODO: restore package import once export map configured.
 import { BranchWorktreeManager, createCoreLib } from '../../../packages/core-lib/dist/index.js'
@@ -8,6 +9,13 @@ import fs from 'fs'
 
 import type { Application } from 'express'
 const app: Application = express()
+app.use(cors({
+  origin: (_origin, cb) => cb(null, true), // allow all; future: restrict via CORS_ORIGINS
+  credentials: true,
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization','x-target-branch','x-branch-refresh']
+}))
+app.use((_, res, next) => { res.setHeader('Cache-Control', 'no-store'); next() })
 app.use(express.json())
 
 // Configuration
@@ -16,7 +24,8 @@ const REPO_URL = process.env.REPO_URL // optional: if provided and REPO_ROOT is 
 const REMOTE_NAME = process.env.REMOTE_NAME || 'origin'
 const AZDO_PAT = process.env.AZDO_PAT // personal access token for Azure DevOps (if HTTPS clone)
 const WORKTREES_DIR = process.env.WORKTREES_DIR || path.join(process.cwd(), '.worktrees')
-const FALLBACK_BRANCH = process.env.FALLBACK_BRANCH || 'main'
+// Backward compatibility: honor legacy FALLBACK_BRANCH if DEFAULT_BRANCH unset
+const DEFAULT_BRANCH = process.env.DEFAULT_BRANCH || process.env.FALLBACK_BRANCH || 'main'
 // Branch allow-list is evaluated per request to allow tests / runtime to modify env without restart
 function getAllowedBranches(): string[] {
   const raw = process.env.ALLOWED_BRANCHES || ''
@@ -123,7 +132,8 @@ function loadBranchCore(branch: string, forceReload = false): ReturnType<typeof 
 
 // Unified middleware: handle refresh header then attach branch core
 app.use((req: Request, res: Response, next: NextFunction) => {
-  const requestedBranch = (req.header('x-target-branch') || FALLBACK_BRANCH).trim()
+  // Default to configured default branch when header not provided
+  const requestedBranch = (req.header('x-target-branch') || DEFAULT_BRANCH).trim()
   const refreshHeader = req.header('x-branch-refresh')
   const forceReload = refreshHeader === 'true'
   if (forceReload) {
@@ -142,13 +152,13 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     next()
   } catch (e: any) {
     log('error', `Failed to load branch worktree '${requestedBranch}'`, e.message)
-    if (requestedBranch !== FALLBACK_BRANCH) {
+  if (requestedBranch !== DEFAULT_BRANCH) {
       try {
-        const fallbackCore = loadBranchCore(FALLBACK_BRANCH, forceReload)
+  const fallbackCore = loadBranchCore(DEFAULT_BRANCH, forceReload)
         ;(req as any).branchCore = fallbackCore
-        ;(req as any).branch = FALLBACK_BRANCH
+  ;(req as any).branch = DEFAULT_BRANCH
         res.setHeader('x-branch-fallback', 'true')
-        log('info', `Falling back to '${FALLBACK_BRANCH}' for branch '${requestedBranch}'`)
+  log('info', `Falling back to '${DEFAULT_BRANCH}' for branch '${requestedBranch}'`)
         next()
       } catch (fallbackErr: any) {
         res.status(500).json({ error: 'branch_load_failed', branch: requestedBranch, detail: fallbackErr.message })
@@ -171,13 +181,13 @@ app.all('*', (req: Request, res: Response) => {
   // attempt exact then variable match
   let match = core.getRouteByPath(method as any, urlPath)
   if (!match) match = core.getMatchedRoute(method as any, urlPath)
-  if (!match && branch !== FALLBACK_BRANCH) {
+  if (!match && branch !== DEFAULT_BRANCH) {
     // attempt fallback branch direct lookup
-    const fallbackCore = loadBranchCore(FALLBACK_BRANCH)
+  const fallbackCore = loadBranchCore(DEFAULT_BRANCH)
   const fallbackMatch = fallbackCore.getRouteByPath(method as any, urlPath)
     if (fallbackMatch) {
       res.setHeader('x-branch-fallback', 'true')
-      res.json({ branch: FALLBACK_BRANCH, route: fallbackMatch })
+  res.json({ branch: DEFAULT_BRANCH, route: fallbackMatch })
       return
     }
   }

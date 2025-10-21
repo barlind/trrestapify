@@ -13,19 +13,48 @@ const REPO_URL = process.env.REPO_URL; // optional: if provided and REPO_ROOT is
 const REMOTE_NAME = process.env.REMOTE_NAME || 'origin';
 const AZDO_PAT = process.env.AZDO_PAT; // personal access token for Azure DevOps (if HTTPS clone)
 const WORKTREES_DIR = process.env.WORKTREES_DIR || path.join(process.cwd(), '.worktrees');
-const FALLBACK_BRANCH = process.env.FALLBACK_BRANCH || 'main';
-const ALLOWED_BRANCHES = (process.env.ALLOWED_BRANCHES || '').split(',').map(b => b.trim()).filter(Boolean);
+// Backward compatibility: honor legacy FALLBACK_BRANCH if DEFAULT_BRANCH unset
+const DEFAULT_BRANCH = process.env.DEFAULT_BRANCH || process.env.FALLBACK_BRANCH || 'main';
+// Branch allow-list is evaluated per request to allow tests / runtime to modify env without restart
+function getAllowedBranches() {
+    const raw = process.env.ALLOWED_BRANCHES || '';
+    return raw.split(',').map(b => b.trim()).filter(Boolean);
+}
 const OFFLINE_SUBDIR = process.env.OFFLINE_SUBDIR || 'www-dev'; // subfolder within worktree used as route root
+function currentEnv() {
+    return {
+        PROXY_BASE_URL: process.env.PROXY_BASE_URL || '',
+        USE_LOCAL_PROXY: process.env.USE_LOCAL_PROXY === 'true',
+        PROXY_ACCEPT: process.env.PROXY_ACCEPT || 'application/json',
+        LOG_LEVEL: process.env.LOG_LEVEL || 'info'
+    };
+}
 // (Refresh via header only now; endpoint removed)
 // Ensure repo exists (optional auto-clone)
+function log(level, message, meta) {
+    const { LOG_LEVEL } = currentEnv();
+    const levels = ['debug', 'info', 'error'];
+    if (LOG_LEVEL === 'silent')
+        return;
+    const allowed = LOG_LEVEL === 'debug' ? levels : LOG_LEVEL === 'info' ? ['info', 'error'] : ['error'];
+    if (!allowed.includes(level))
+        return;
+    const base = `[mock-service] ${message}`;
+    if (meta) {
+        console.log(base, meta);
+    }
+    else {
+        console.log(base);
+    }
+}
 function ensureLocalRepo() {
     const gitDir = path.join(REPO_ROOT, '.git');
     if (!fs.existsSync(gitDir)) {
         if (!REPO_URL) {
-            console.warn('[mock-service] REPO_ROOT is not a git repository and REPO_URL not provided; branch features will fail.');
+            log('error', 'REPO_ROOT is not a git repository and REPO_URL not provided; branch features will fail.');
             return;
         }
-        console.log(`[mock-service] Cloning ${REPO_URL} into ${REPO_ROOT} ...`);
+        log('info', `Cloning ${REPO_URL} into ${REPO_ROOT} ...`);
         try {
             if (AZDO_PAT) {
                 // Use extraheader for PAT basic auth
@@ -40,7 +69,7 @@ function ensureLocalRepo() {
             }
         }
         catch (e) {
-            console.error('[mock-service] Failed to clone repository:', e.message);
+            log('error', 'Failed to clone repository', e.message);
         }
     }
 }
@@ -49,9 +78,32 @@ ensureLocalRepo();
 const manager = new BranchWorktreeManager(REPO_ROOT, WORKTREES_DIR, 10, { remoteName: REMOTE_NAME });
 const branchCache = new Map();
 function isBranchAllowed(branch) {
-    if (ALLOWED_BRANCHES.length === 0)
+    // Disabled allow list means everything allowed
+    if (process.env.DISABLE_BRANCH_ALLOW_LIST === 'true')
         return true;
-    return ALLOWED_BRANCHES.includes(branch);
+    const list = getAllowedBranches();
+    // Empty list -> allow all (no lock down by default)
+    if (list.length === 0)
+        return true;
+    // If explicit wildcard '*' present allow all
+    if (list.includes('*'))
+        return true;
+    // Support simple glob patterns with '*'
+    return list.some(pattern => matchesBranchPattern(pattern, branch));
+}
+function matchesBranchPattern(pattern, branch) {
+    if (pattern === branch)
+        return true;
+    // Escape regex special chars except '*'
+    const escaped = pattern.replace(/[-/\\^$+?.()|[\]{}]/g, r => `\\${r}`);
+    const regexStr = '^' + escaped.replace(/\*/g, '.*') + '$';
+    try {
+        const re = new RegExp(regexStr);
+        return re.test(branch);
+    }
+    catch {
+        return false;
+    }
 }
 function loadBranchCore(branch, forceReload = false) {
     const cached = branchCache.get(branch);
@@ -65,16 +117,19 @@ function loadBranchCore(branch, forceReload = false) {
         rootDir = candidate;
     }
     const core = createCoreLib(rootDir);
+    log('debug', `Loaded branch '${branch}'${forceReload ? ' (forceReload)' : ''} rootDir=${rootDir}`);
     branchCache.set(branch, { loadedAt: Date.now(), core });
     return core;
 }
 // Unified middleware: handle refresh header then attach branch core
 app.use((req, res, next) => {
-    const requestedBranch = (req.header('x-target-branch') || FALLBACK_BRANCH).trim();
+    // Default to configured default branch when header not provided
+    const requestedBranch = (req.header('x-target-branch') || DEFAULT_BRANCH).trim();
     const refreshHeader = req.header('x-branch-refresh');
     const forceReload = refreshHeader === 'true';
     if (forceReload) {
         branchCache.delete(requestedBranch);
+        log('info', `Force reload requested for branch '${requestedBranch}'`);
     }
     if (!isBranchAllowed(requestedBranch)) {
         res.status(403).json({ error: 'branch_not_allowed', branch: requestedBranch });
@@ -88,13 +143,14 @@ app.use((req, res, next) => {
         next();
     }
     catch (e) {
-        console.error('Failed to load branch worktree', requestedBranch, e.message);
-        if (requestedBranch !== FALLBACK_BRANCH) {
+        log('error', `Failed to load branch worktree '${requestedBranch}'`, e.message);
+        if (requestedBranch !== DEFAULT_BRANCH) {
             try {
-                const fallbackCore = loadBranchCore(FALLBACK_BRANCH, forceReload);
+                const fallbackCore = loadBranchCore(DEFAULT_BRANCH, forceReload);
                 req.branchCore = fallbackCore;
-                req.branch = FALLBACK_BRANCH;
+                req.branch = DEFAULT_BRANCH;
                 res.setHeader('x-branch-fallback', 'true');
+                log('info', `Falling back to '${DEFAULT_BRANCH}' for branch '${requestedBranch}'`);
                 next();
             }
             catch (fallbackErr) {
@@ -118,17 +174,22 @@ app.all('*', (req, res) => {
     let match = core.getRouteByPath(method, urlPath);
     if (!match)
         match = core.getMatchedRoute(method, urlPath);
-    if (!match && branch !== FALLBACK_BRANCH) {
+    if (!match && branch !== DEFAULT_BRANCH) {
         // attempt fallback branch direct lookup
-        const fallbackCore = loadBranchCore(FALLBACK_BRANCH);
+        const fallbackCore = loadBranchCore(DEFAULT_BRANCH);
         const fallbackMatch = fallbackCore.getRouteByPath(method, urlPath);
         if (fallbackMatch) {
             res.setHeader('x-branch-fallback', 'true');
-            res.json({ branch: FALLBACK_BRANCH, route: fallbackMatch });
+            res.json({ branch: DEFAULT_BRANCH, route: fallbackMatch });
             return;
         }
     }
     if (!match) {
+        const { PROXY_BASE_URL } = currentEnv();
+        if (PROXY_BASE_URL) {
+            forwardToProxy(req, res, branch);
+            return;
+        }
         res.status(404).json({ error: 'not_found', branch, path: urlPath });
         return;
     }
@@ -141,14 +202,100 @@ app.all('*', (req, res) => {
     const queryVars = {};
     Object.entries(req.query).forEach(([k, v]) => { if (typeof v === 'string')
         queryVars[k] = v; });
-    const body = match.getBody(vars, queryVars);
+    let body = match.getBody(vars, queryVars);
+    // User-specific override: if Authorization header contains JWT with sub claim
+    function extractSubFromAuth(authHeader) {
+        if (!authHeader)
+            return undefined;
+        const parts = authHeader.split(/\s+/);
+        let token = parts.pop();
+        if (!token || token.split('.').length < 2)
+            return undefined;
+        const payloadB64 = token.split('.')[1];
+        try {
+            const normalized = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
+            const decoded = Buffer.from(normalized, 'base64').toString('utf8');
+            const json = JSON.parse(decoded);
+            if (typeof json.sub === 'string' && json.sub)
+                return json.sub;
+        }
+        catch { /* ignore */ }
+        return undefined;
+    }
+    const authHeader = req.headers['authorization'];
+    const userId = extractSubFromAuth(authHeader || '');
+    if (userId && match.directoryPath) {
+        const overridePath = path.join(match.directoryPath, `${userId}.json`);
+        if (fs.existsSync(overridePath)) {
+            try {
+                const raw = fs.readFileSync(overridePath, 'utf8');
+                const parsed = JSON.parse(raw);
+                body = parsed;
+                res.setHeader('x-user-override', 'true');
+                res.setHeader('x-user-id', userId);
+                log('debug', `User override applied userId=${userId} path=${overridePath}`);
+            }
+            catch { /* ignore parse errors */ }
+        }
+    }
     const responseRoute = { ...match, body };
     res.setHeader('x-branch-served', branch);
+    log('info', `Served route ${method} ${urlPath} branch=${branch}${userId ? ' userId=' + userId : ''}`);
     res.json({ branch, route: responseRoute });
 });
+async function forwardToProxy(req, res, branch) {
+    const { PROXY_BASE_URL, USE_LOCAL_PROXY, PROXY_ACCEPT } = currentEnv();
+    try {
+        let originalUrl = req.originalUrl || req.path;
+        if (USE_LOCAL_PROXY) {
+            if (originalUrl.startsWith('/content')) {
+                originalUrl = originalUrl.replace('/content', '');
+            }
+            if (originalUrl.startsWith('/settings/content')) {
+                originalUrl = originalUrl.replace('/settings/content', '/api/settings/public');
+            }
+        }
+        const proxyUrl = PROXY_BASE_URL + originalUrl;
+        const forwardedHeaders = {};
+        Object.entries(req.headers).forEach(([k, v]) => {
+            if (typeof v === 'string')
+                forwardedHeaders[k] = v;
+            else if (Array.isArray(v))
+                forwardedHeaders[k] = v.join(', ');
+        });
+        forwardedHeaders['Accept'] = PROXY_ACCEPT;
+        const init = { method: req.method, headers: forwardedHeaders };
+        if (!['GET', 'HEAD'].includes(req.method) && req.body) {
+            init.body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+            forwardedHeaders['Content-Type'] = forwardedHeaders['Content-Type'] || 'application/json';
+        }
+        const proxyResp = await fetch(proxyUrl, init);
+        const text = await proxyResp.text();
+        let data;
+        try {
+            data = JSON.parse(text);
+            if (USE_LOCAL_PROXY && originalUrl.startsWith('/api/settings/public')) {
+                data = { epiSettings: data };
+            }
+        }
+        catch (err) {
+            log('error', 'Proxy JSON parse error', { proxyUrl, err });
+            res.status(502).send(`Invalid JSON from proxy ${proxyUrl}`);
+            return;
+        }
+        res.setHeader('x-proxied', 'true');
+        res.setHeader('x-proxy-url', proxyUrl);
+        res.status(proxyResp.status).json(data);
+        log('info', `Forwarded ${req.method} ${req.path} to proxy=${proxyUrl} status=${proxyResp.status} branch=${branch}`);
+    }
+    catch (err) {
+        log('error', 'Proxy request failed', err?.message || err);
+        res.status(500).json({ error: 'proxy_failed', detail: err?.message || String(err) });
+    }
+}
 const port = process.env.PORT || 4001;
 if (!process.env.VITEST) {
-    app.listen(port, () => { console.log(`mock-service listening on ${port}`); });
+    app.listen(port, () => { const { PROXY_BASE_URL } = currentEnv(); log('info', `mock-service listening on ${port} proxy=${PROXY_BASE_URL || 'none'} offlineSubdir=${OFFLINE_SUBDIR}`); });
 }
 export { app, manager, branchCache };
 //# sourceMappingURL=server.js.map

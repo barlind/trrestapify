@@ -11,7 +11,7 @@ This repository now hosts a streamlined mock API platform focused on branch‑aw
 
 ## Key Concepts
 
-1. Branch targeting via headers: `x-target-branch` selects which git branch content to serve. Missing branches fall back to `FALLBACK_BRANCH` if set.
+1. Branch targeting via headers: `x-target-branch` selects which git branch content to serve. Missing or failed branches fall back to `DEFAULT_BRANCH` (primary default) if set.
 2. Forced refresh: `x-branch-refresh: 1` invalidates the cached branch content and re-loads from the worktree.
 3. User override: `Authorization: Bearer <JWT>` with a `sub` claim triggers user‑specific override logic if matching content exists.
 4. Variable routes: Filenames / directory names like `[id].json` become parameterized Express routes (e.g. `/items/:id`). Variables are substituted inside file bodies.
@@ -27,13 +27,94 @@ This repository now hosts a streamlined mock API platform focused on branch‑aw
 | `WORKTREES_DIR` | Directory where branch worktrees are created | `.worktrees` (auto) |
 | `ALLOWED_BRANCHES` | Comma-separated whitelist of branches (supports `*` and simple globs like `feature*`) | (none) |
 | `DISABLE_BRANCH_ALLOW_LIST` | If `1`, ignore `ALLOWED_BRANCHES` entirely | `0` |
-| `FALLBACK_BRANCH` | Branch used when target branch missing | (none) |
+| `DEFAULT_BRANCH` | Primary branch used when header missing or branch fails to load | `main` |
 | `OFFLINE_SUBDIR` | Subdirectory inside worktree used as content root | `www-dev` |
 | `AZDO_PAT` | Azure DevOps PAT (sets git extraheader for auth) | (none) |
 | `PROXY_BASE_URL` | Base URL for upstream proxy fallback | (none) |
 | `PROXY_ACCEPT` | Comma-separated list of path prefixes eligible for proxy | (none) |
 | `USE_LOCAL_PROXY` | If `1`, apply local rewrite rules before proxying | `0` |
 | `LOG_LEVEL` | `debug` | `info` | `error` | `silent` | `info` |
+
+## Running Locally
+
+Minimal steps to get the mock service serving branch content on your machine.
+
+1. Clone (or ensure) a git repo whose branch content you want to serve. If the mock service repo itself should serve its own test fixtures you can skip `REPO_URL`.
+2. Export required environment variables (at minimum `REPO_URL` if `REPO_ROOT` isn't already a git repo). Optionally set `DEFAULT_BRANCH`.
+3. Install dependencies.
+4. Start the dev server (hot reload via `tsx`).
+5. Hit routes with `curl` providing `x-target-branch`.
+
+### Quickstart
+
+```bash
+git clone https://github.com/your-org/your-content-repo.git /tmp/offline-repo
+export REPO_ROOT=/tmp/offline-repo            # Override root instead of using REPO_URL clone
+export DEFAULT_BRANCH=main                   # Optional; defaults to main
+export LOG_LEVEL=info                        # Or debug
+export ALLOWED_BRANCHES="*"                 # Allow all branches (optional)
+export OFFLINE_SUBDIR=www-dev                # If your content lives under this subdir
+yarn install
+yarn workspace @trrestapify/mock-service dev
+```
+
+Then request a route (assuming a file `www-dev/hello.json` exists on branch `featureA`):
+
+```bash
+curl -H 'x-target-branch: featureA' http://localhost:4001/hello
+```
+
+Force a reload after modifying branch content (e.g. you pulled new commits):
+
+```bash
+curl -H 'x-target-branch: featureA' -H 'x-branch-refresh: true' http://localhost:4001/hello
+```
+
+If a branch can't be loaded, the server falls back to `DEFAULT_BRANCH` and sets header `x-branch-fallback: true`.
+
+### Using REPO_URL Auto-clone
+
+Instead of pre-cloning, let the service clone shallow worktrees:
+
+```bash
+export REPO_URL=https://github.com/your-org/your-content-repo.git
+export WORKTREES_DIR=$(pwd)/.worktrees
+export DEFAULT_BRANCH=main
+yarn workspace @trrestapify/mock-service dev
+```
+
+On first request for a branch the server creates a shallow worktree under `${WORKTREES_DIR}/<branch>`.
+
+### Proxy Fallback Example
+
+```bash
+export PROXY_BASE_URL=https://public-api.example.com
+export PROXY_ACCEPT=/users,/settings
+curl -H 'x-target-branch: main' http://localhost:4001/users/profile   # If not found locally, proxies upstream
+```
+
+### Running Tests
+
+All workspaces:
+```bash
+npm test --workspaces
+```
+Individual package:
+```bash
+yarn workspace @trrestapify/core-lib test
+yarn workspace @trrestapify/mock-service test
+```
+
+### Common Issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| 403 branch_not_allowed | Branch not in allow list | Adjust `ALLOWED_BRANCHES` or set `DISABLE_BRANCH_ALLOW_LIST=1` |
+| 500 branch_load_failed | Git worktree add failed (branch missing or auth) | Verify branch exists; ensure repo has remote access; set `AZDO_PAT` if Azure DevOps |
+| Missing route variables | File naming pattern incorrect | Use `[id].json` (not `:id.json`) |
+| Fallback always triggers | Requested branch absent | Create branch or specify existing one; check `x-target-branch` spelling |
+| Dev script permission denied / stale dead links | Corrupted `node_modules` (ACLs, partial prune) | `yarn sanitize:node_modules && rm -rf node_modules && yarn install` |
+
 
 
 ## Typical Development Flow
@@ -100,7 +181,7 @@ curl -H 'x-target-branch: featureA' -H 'x-branch-refresh: true' http://localhost
 ```
 Fallback when branch missing:
 ```bash
-curl -H 'x-target-branch: non-existent' http://localhost:4001/content/mitt-trr  # serves FALLBACK_BRANCH
+curl -H 'x-target-branch: non-existent' http://localhost:4001/content/mitt-trr  # serves DEFAULT_BRANCH
 ```
 
 Wildcard allow list examples:
@@ -132,6 +213,10 @@ yarn eslint packages/** services/** --ext .ts
 ## Logging
 
 Set `LOG_LEVEL` to control verbosity. Levels: `silent`, `error`, `info`, `debug`. Internal events (branch load, proxy forward, override hits) emit structured lines.
+
+## CORS
+
+The mock service now enables permissive CORS by default (all origins, common methods/headers). Adjust by introducing a future `CORS_ORIGINS` env (comma list) and replacing the middleware in `services/mock-service/src/server.ts`.
 
 ## Legacy Notice
 
