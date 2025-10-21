@@ -1,4 +1,9 @@
 dist/
-bin/
+archive/legacy/
+services/mock-service/.worktrees/
+node_modules/
+# Ignore generated declaration & build artifacts
+**/*.d.ts
+**/*.js.map
 
-**/*.js
+# Allow source JS/TS in workspaces (don't blanket-ignore .js)

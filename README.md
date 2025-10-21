@@ -38,16 +38,17 @@ This repository now hosts a streamlined mock API platform focused on branch‑aw
 
 ## Typical Development Flow
 
-1. Export required env vars (at minimum `REPO_URL`).
-2. Run the mock service:
+1. Decide package manager (project uses Yarn; `package-lock.json` removed to avoid dual locks).
+2. Export required env vars (at minimum `REPO_URL`).
+3. Run the mock service:
   ```bash
   yarn workspace @trrestapify/mock-service dev
   ```
-3. Call the API with a target branch:
+4. Call the API with a target branch:
   ```bash
   curl -H 'x-target-branch: main' http://localhost:4001/content/mitt-trr
   ```
-4. Force refresh after updating branch content:
+5. Force refresh after updating branch content:
   ```bash
   curl -H 'x-target-branch: feature/x' -H 'x-branch-refresh: 1' http://localhost:4001/content/some-path
   ```
@@ -56,9 +57,70 @@ This repository now hosts a streamlined mock API platform focused on branch‑aw
 
 Send `Authorization: Bearer <token>`; if the token’s decoded `sub` matches a user‑specific override file, that override is layered onto the base route response.
 
+Override file discovery (example):
+```
+content/
+  profile.json               # base response
+  profile--user-12345.json   # override served when sub === '12345'
+```
+Merge strategy (current): override file fully replaces base for simplicity. Future enhancement could deep-merge.
+
+Security notes:
+- Only `sub` is consumed; ensure tokens are validated upstream if exposure matters.
+- No override path traversal: filenames constrained to expected pattern.
+
 ## Proxy Fallback
 
 When local content is absent and request path matches any prefix in `PROXY_ACCEPT`, the request is forwarded to `PROXY_BASE_URL`. With `USE_LOCAL_PROXY=1`, certain paths are rewritten (e.g. `/settings/content` → `/api/settings/public`).
+
+Configuration example:
+```
+PROXY_BASE_URL=https://upstream.example.com
+PROXY_ACCEPT=/settings,/users,/auth
+USE_LOCAL_PROXY=1
+```
+Behavior:
+- If request path starts with one of the prefixes, attempt proxy.
+- Local rewrite (sample) `/settings/content` → `/api/settings/public` (implementation-specific; see service code).
+- On proxy error, respond with upstream status & log an error line.
+
+Planned enhancements:
+- Timeout & retry controls via env.
+- Metrics on proxy hit ratio.
+
+## Branch Workflow Examples
+
+List routes from `featureA`:
+```bash
+curl -H 'x-target-branch: featureA' http://localhost:4001/content/mitt-trr
+```
+Refresh branch cache & worktree:
+```bash
+curl -H 'x-target-branch: featureA' -H 'x-branch-refresh: true' http://localhost:4001/content/mitt-trr
+```
+Fallback when branch missing:
+```bash
+curl -H 'x-target-branch: non-existent' http://localhost:4001/content/mitt-trr  # serves FALLBACK_BRANCH
+```
+
+## Refresh Strategies
+
+Current: header `x-branch-refresh: true`.
+Upcoming (optional): authenticated endpoint `POST /__restapify/branch/refresh` with header `Authorization: Bearer <REFRESH_TOKEN>`.
+
+## Development Conventions
+
+- Use Yarn (`yarn install`) for dependency management.
+- Run tests: `npm run workspaces:test` (aggregated) or per workspace `yarn workspace @trrestapify/core-lib test`.
+- Avoid committing build artifacts; rely on source in `packages/` & `services/`.
+- Keep environment-specific secrets out of `.env` committed files.
+
+## Linting & Formatting
+
+Unified ESLint config (`.eslintrc`) will lint TS across workspaces. Ignored paths declared in `.eslintignore`. Run:
+```bash
+yarn eslint packages/** services/** --ext .ts
+```
 
 ## Logging
 
