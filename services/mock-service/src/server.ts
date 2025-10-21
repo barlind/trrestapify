@@ -81,10 +81,28 @@ interface BranchCacheEntry { loadedAt: number; core: ReturnType<typeof createCor
 const branchCache = new Map<string, BranchCacheEntry>()
 
 function isBranchAllowed(branch: string): boolean {
+  // Disabled allow list means everything allowed
   if (process.env.DISABLE_BRANCH_ALLOW_LIST === 'true') return true
   const list = getAllowedBranches()
+  // Empty list -> allow all (no lock down by default)
   if (list.length === 0) return true
-  return list.includes(branch)
+  // If explicit wildcard '*' present allow all
+  if (list.includes('*')) return true
+  // Support simple glob patterns with '*'
+  return list.some(pattern => matchesBranchPattern(pattern, branch))
+}
+
+function matchesBranchPattern(pattern: string, branch: string): boolean {
+  if (pattern === branch) return true
+  // Escape regex special chars except '*'
+  const escaped = pattern.replace(/[-/\\^$+?.()|[\]{}]/g, r => `\\${r}`)
+  const regexStr = '^' + escaped.replace(/\*/g, '.*') + '$'
+  try {
+    const re = new RegExp(regexStr)
+    return re.test(branch)
+  } catch {
+    return false
+  }
 }
 
 function loadBranchCore(branch: string, forceReload = false): ReturnType<typeof createCoreLib> {

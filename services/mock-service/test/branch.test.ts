@@ -72,3 +72,26 @@ describe('branch refresh header', () => {
     expect(withRefresh.body.route.body.message).toBe('hello A updated')
   })
 })
+
+describe('branch wildcard allow list', () => {
+  it('allows branches matching wildcard pattern', async () => {
+    process.env.ALLOWED_BRANCHES = 'feature*'
+    delete process.env.DISABLE_BRANCH_ALLOW_LIST
+    const resA = await request(app).get('/hello').set('x-target-branch', BRANCH_A)
+    expect(resA.status).toBe(200)
+    const resB = await request(app).get('/hello').set('x-target-branch', BRANCH_B)
+    expect(resB.status).toBe(200)
+  })
+  it('blocks non-matching branch when allow list has wildcard pattern', async () => {
+    process.env.ALLOWED_BRANCHES = 'feature*'
+    const resOther = await request(app).get('/hello').set('x-target-branch', 'otherBranch')
+    expect(resOther.status).toBe(403)
+    expect(resOther.body.error).toBe('branch_not_allowed')
+  })
+  it('treats * as allow all', async () => {
+    process.env.ALLOWED_BRANCHES = '*'
+    const resOther = await request(app).get('/hello').set('x-target-branch', 'some/random/branch')
+    // 404 may occur if content missing, but should not be 403
+    expect(resOther.status).not.toBe(403)
+  })
+})

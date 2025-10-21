@@ -25,7 +25,7 @@ This repository now hosts a streamlined mock API platform focused on branch‑aw
 | `REPO_URL` | Remote git URL to clone (required if repo not already present) | (none) |
 | `REMOTE_NAME` | Remote name used for fetch operations | `origin` |
 | `WORKTREES_DIR` | Directory where branch worktrees are created | `.worktrees` (auto) |
-| `ALLOWED_BRANCHES` | Comma-separated whitelist of branches | (none) |
+| `ALLOWED_BRANCHES` | Comma-separated whitelist of branches (supports `*` and simple globs like `feature*`) | (none) |
 | `DISABLE_BRANCH_ALLOW_LIST` | If `1`, ignore `ALLOWED_BRANCHES` entirely | `0` |
 | `FALLBACK_BRANCH` | Branch used when target branch missing | (none) |
 | `OFFLINE_SUBDIR` | Subdirectory inside worktree used as content root | `www-dev` |
@@ -101,6 +101,13 @@ curl -H 'x-target-branch: featureA' -H 'x-branch-refresh: true' http://localhost
 Fallback when branch missing:
 ```bash
 curl -H 'x-target-branch: non-existent' http://localhost:4001/content/mitt-trr  # serves FALLBACK_BRANCH
+```
+
+Wildcard allow list examples:
+```bash
+export ALLOWED_BRANCHES="feature*"       # allow featureA, featureB, feature/foo, etc.
+export ALLOWED_BRANCHES="*"              # allow all branches explicitly
+export ALLOWED_BRANCHES="release*,hotfix*"  # allow release and hotfix patterns
 ```
 
 ## Refresh Strategies
