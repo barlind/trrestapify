@@ -1,22 +1,16 @@
 {
   "compilerOptions": {
-    "outDir": "dist",
     "noImplicitAny": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "strictNullChecks": true,
     "strictPropertyInitialization": false,
-    "target": "esnext",
-    "module": "esnext",
-    "moduleResolution": "node",
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Node",
     "declaration": true,
     "skipLibCheck": true,
-    "sourceMap": true // Add this line to generate source maps
+    "sourceMap": true
   },
-  "include": [
-    "src/**/*"
-  ],
-  "exclude": [
-    "node_module"
-  ]
+  "exclude": ["archive/legacy/**/*", "src/**/*", "dist/**/*"]
 }

@@ -1,60 +1,77 @@
-# Restapify
+# Restapify Monorepo
 
-<a href="https://restapify.vercel.app/">
-  <img src="./docs/assets/banner.png" alt="restapify cover" width="500">
-</a>
+This repository now hosts a streamlined mock API platform focused on branch‑aware content serving and developer overrides. The original single‑package CLI implementation has been archived under `archive/legacy/` and all legacy build artifacts have been removed from the active codebase.
 
-<br />
+## Active Packages
 
-<a href="https://www.npmjs.com/package/restapify">
-  <img src="https://img.shields.io/npm/v/restapify" alt="npm">
-</a>
-<a href="https://github.com/johannchopin/restapify/actions">
-  <img src="https://github.com/johannchopin/restapify/actions/workflows/test.yml/badge.svg" alt="test workflow">
-</a>
-<a href="https://codecov.io/gh/johannchopin/restapify">
-  <img src="https://codecov.io/gh/johannchopin/restapify/branch/main/graph/badge.svg" alt="codecov">
-</a>
-<a href="https://semver.org/">
-  <img src="https://img.shields.io/badge/Versioning-SemVer-blue" alt="This projet uses SemVer for versioning"/>
-</a>
-<a href="https://gitmoji.dev">
-  <img src="https://img.shields.io/badge/gitmoji-%20😜%20😍-FFDD67.svg" alt="Gitmoji">
-</a>
+| Path | Name | Purpose |
+|------|------|---------|
+| `packages/core-lib` | `@trrestapify/core-lib` | Core content loading, route parsing, git worktree management |
+| `services/mock-service` | `@trrestapify/mock-service` | Express server runtime exposing branch + user override + proxy fallback |
 
-<br/>
+## Key Concepts
 
-Restapify is a tool that allows you to quickly and easily deploy a local REST API by using an intuitive and developer friendly JSON file structure.
+1. Branch targeting via headers: `x-target-branch` selects which git branch content to serve. Missing branches fall back to `FALLBACK_BRANCH` if set.
+2. Forced refresh: `x-branch-refresh: 1` invalidates the cached branch content and re-loads from the worktree.
+3. User override: `Authorization: Bearer <JWT>` with a `sub` claim triggers user‑specific override logic if matching content exists.
+4. Variable routes: Filenames / directory names like `[id].json` become parameterized Express routes (e.g. `/items/:id`). Variables are substituted inside file bodies.
+5. Proxy fallback: If a requested path is not found locally and matches `PROXY_ACCEPT`, the server forwards the call to `PROXY_BASE_URL` (with optional local rewrite rules when `USE_LOCAL_PROXY=1`).
+6. Worktrees: Each requested branch is materialized as a shallow git worktree under `WORKTREES_DIR`, using `AZDO_PAT` or standard git auth if needed.
 
-----
-## Summary
-- [**Why Restapify**](#why-restapify)
-- [**Features**](#features)
-- [**Documentation**](#documentation)
-- [**Contributing**](#contributing)
+## Environment Variables
 
-## Why Restapify
-
-When you start a new frontend project when the backend is not yet ready, you quickly come to the question of how to retrieve the data to be displayed. There are then many solutions that come with advantages but also some inconveniences. It's possible to use a tool like [postman](https://www.postman.com/) but it's not 100% free and require an account, to simply fetch local JSON data but it only supports a `GET` request or use a mocker library like [json-server](https://github.com/typicode/json-server), [mocker-api](https://github.com/jaywcjlove/mocker-api) or [http-fake-backend](https://github.com/micromata/http-fake-backend). 
-
-The problem of most of this libraries is the way you have to define your API endpoints (a single file for all the routes, javascript files that took almost the same time to code than the real API, ...). Restapify try to make this process even faster with a file structure close to the one that you can see in [Nextjs](https://github.com/vercel/next.js) or [Sapper](https://github.com/sveltejs/sapper) and some developer friendly syntaxes to populate your json files.
-
-## Features
-
-- 💡 **Incredible DX** - Intuitive files structure and JSON syntax
-- ✅ **JSON valid** - You will only use `.json` files that follows the [ECMA-404](https://www.ecma-international.org/publications-and-standards/standards/ecma-404/) standard
-- 🎛 **Dashboard** - Out of the box SPA to manage and explore your mocked API
-- 💻 **CLI** - Use the CLI for an instant deployment
-- 🔥 **Built in hot watcher** - Directly see your changes after a file update
-- 🚨 **Events handler** - Execute callbacks on specific events 
-- 🛡 **TypeScript support**
+| Name | Description | Default |
+|------|-------------|---------|
+| `REPO_URL` | Remote git URL to clone (required if repo not already present) | (none) |
+| `REMOTE_NAME` | Remote name used for fetch operations | `origin` |
+| `WORKTREES_DIR` | Directory where branch worktrees are created | `.worktrees` (auto) |
+| `ALLOWED_BRANCHES` | Comma-separated whitelist of branches | (none) |
+| `DISABLE_BRANCH_ALLOW_LIST` | If `1`, ignore `ALLOWED_BRANCHES` entirely | `0` |
+| `FALLBACK_BRANCH` | Branch used when target branch missing | (none) |
+| `OFFLINE_SUBDIR` | Subdirectory inside worktree used as content root | `www-dev` |
+| `AZDO_PAT` | Azure DevOps PAT (sets git extraheader for auth) | (none) |
+| `PROXY_BASE_URL` | Base URL for upstream proxy fallback | (none) |
+| `PROXY_ACCEPT` | Comma-separated list of path prefixes eligible for proxy | (none) |
+| `USE_LOCAL_PROXY` | If `1`, apply local rewrite rules before proxying | `0` |
+| `LOG_LEVEL` | `debug` | `info` | `error` | `silent` | `info` |
 
 
-## Documentation
+## Typical Development Flow
 
-Checkout the documentation on the [website](https://restapify.vercel.app/) or directly read it from the Markdown [source file](docs/README.md).
+1. Export required env vars (at minimum `REPO_URL`).
+2. Run the mock service:
+  ```bash
+  yarn workspace @trrestapify/mock-service dev
+  ```
+3. Call the API with a target branch:
+  ```bash
+  curl -H 'x-target-branch: main' http://localhost:4001/content/mitt-trr
+  ```
+4. Force refresh after updating branch content:
+  ```bash
+  curl -H 'x-target-branch: feature/x' -H 'x-branch-refresh: 1' http://localhost:4001/content/some-path
+  ```
+
+## User Override (JWT)
+
+Send `Authorization: Bearer <token>`; if the token’s decoded `sub` matches a user‑specific override file, that override is layered onto the base route response.
+
+## Proxy Fallback
+
+When local content is absent and request path matches any prefix in `PROXY_ACCEPT`, the request is forwarded to `PROXY_BASE_URL`. With `USE_LOCAL_PROXY=1`, certain paths are rewritten (e.g. `/settings/content` → `/api/settings/public`).
+
+## Logging
+
+Set `LOG_LEVEL` to control verbosity. Levels: `silent`, `error`, `info`, `debug`. Internal events (branch load, proxy forward, override hits) emit structured lines.
+
+## Legacy Notice
+
+The previous CLI, dashboard, and internal implementation remain for historical reference only in `archive/legacy/`. They are excluded from builds and should not be modified.
 
 ## Contributing
 
-All remarks are welcome so feel free to [open an issue](https://github.com/johannchopin/restapify/issues).
-Wants to collaborate? Please read the [contributing guidelines](./CONTRIBUTING.md).
+See `CONTRIBUTING.md` for updated guidelines. Focus contributions on `packages/core-lib` or `services/mock-service`.
+
+## License
+
+MIT

@@ -11,3 +11,5 @@ coverage/
 .vscode/
 
 www-dev/
+.DS_Store
+.DS_Store

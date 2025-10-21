@@ -1068,7 +1068,9 @@ var Restapify = /*#__PURE__*/_createClass(function Restapify(_ref) {
     _ref$hotWatch = _ref.hotWatch,
     _hotWatch = _ref$hotWatch === void 0 ? true : _ref$hotWatch,
     _ref$proxyBaseUrl = _ref.proxyBaseUrl,
-    proxyBaseUrl = _ref$proxyBaseUrl === void 0 ? '' : _ref$proxyBaseUrl;
+    proxyBaseUrl = _ref$proxyBaseUrl === void 0 ? '' : _ref$proxyBaseUrl,
+    _ref$useLocal = _ref.useLocal,
+    useLocal = _ref$useLocal === void 0 ? false : _ref$useLocal;
   _classCallCheck(this, Restapify);
   _defineProperty(this, "eventCallbacksStore", {});
   _defineProperty(this, "app", void 0);
@@ -1088,6 +1090,7 @@ var Restapify = /*#__PURE__*/_createClass(function Restapify(_ref) {
   _defineProperty(this, "states", []);
   _defineProperty(this, "hotWatch", void 0);
   _defineProperty(this, "proxyBaseUrl", void 0);
+  _defineProperty(this, "useLocal", void 0);
   _defineProperty(this, "listRouteFiles", function () {
     _this.listedRouteFiles = _getRouteFiles(_this.rootDir);
   });
@@ -1137,8 +1140,21 @@ var Restapify = /*#__PURE__*/_createClass(function Restapify(_ref) {
               return _context.abrupt("return", next());
             case 2:
               _context.prev = 2;
+              if (_this.useLocal) {
+                process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+                _this.proxyBaseUrl = 'https://localhost:44319';
+                console.log("Using local proxy base URL: ".concat(_this.proxyBaseUrl));
+
+                // we rewrite to fit local api paths
+                if (req.originalUrl.startsWith('/content')) {
+                  req.originalUrl = req.originalUrl.replace('/content', '');
+                }
+                if (req.originalUrl.startsWith('/settings/content')) {
+                  req.originalUrl = req.originalUrl.replace('/settings/content', '/api/settings/public');
+                }
+              }
               if (!(_this.proxyBaseUrl != '')) {
-                _context.next = 24;
+                _context.next = 26;
                 break;
               }
               console.log("No matching local route for ".concat(req.method, " ").concat(chalk.blue(req.originalUrl), ", forwarding..."));
@@ -1154,44 +1170,53 @@ var Restapify = /*#__PURE__*/_createClass(function Restapify(_ref) {
                 }
                 return acc;
               }, {});
-              _context.next = 9;
+              _context.next = 10;
               return fetch(proxyUrl, {
                 method: req.method,
-                headers: forwardedHeaders,
+                // we add accept header to the forwarded headers to ensure we get json back
+                headers: _objectSpread$1(_objectSpread$1({}, forwardedHeaders), {}, {
+                  "Accept": "application/json"
+                }),
                 body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body
               });
-            case 9:
+            case 10:
               proxyResponse = _context.sent;
               res.appendHeader("response-was-proxied", "true");
-              _context.next = 13;
+              _context.next = 14;
               return proxyResponse.text();
-            case 13:
+            case 14:
               proxyText = _context.sent;
-              _context.prev = 14;
+              _context.prev = 15;
               proxyData = JSON.parse(proxyText);
-              _context.next = 22;
+              //if the url points to /api/settings/public, we need to wrap the data in an object
+              if (req.originalUrl.startsWith('/api/settings/public')) {
+                proxyData = {
+                  epiSettings: proxyData
+                };
+              }
+              _context.next = 24;
               break;
-            case 18:
-              _context.prev = 18;
-              _context.t0 = _context["catch"](14);
+            case 20:
+              _context.prev = 20;
+              _context.t0 = _context["catch"](15);
               console.error("Failed to parse JSON from proxy ".concat(_this.proxyBaseUrl, " for ").concat(req.originalUrl, ":"), _context.t0);
               return _context.abrupt("return", res.status(500).send("Invalid JSON received from proxy ".concat(_this.proxyBaseUrl, " request to ").concat(req.originalUrl, ". Response was: '").concat(proxyText, "'")));
-            case 22:
+            case 24:
               res.status(proxyResponse.status).json(proxyData);
               console.log("Served ".concat(chalk.italic("forwarded content"), " for ").concat(chalk.blue(req.originalUrl), " with status ").concat(proxyResponse.status, " from ").concat(_this.proxyBaseUrl, "."));
-            case 24:
-              _context.next = 30;
-              break;
             case 26:
-              _context.prev = 26;
+              _context.next = 32;
+              break;
+            case 28:
+              _context.prev = 28;
               _context.t1 = _context["catch"](2);
               console.error("Proxy request failed:", _context.t1);
               res.status(500).send("Failed to get result from proxy request to ".concat(req.originalUrl, ". Error was ").concat(_context.t1));
-            case 30:
+            case 32:
             case "end":
               return _context.stop();
           }
-        }, _callee, null, [[2, 26], [14, 18]]);
+        }, _callee, null, [[2, 28], [15, 20]]);
       }))()["catch"](next);
     });
   });
@@ -1575,6 +1600,7 @@ var Restapify = /*#__PURE__*/_createClass(function Restapify(_ref) {
   this.publicPath = _baseUrl;
   this.hotWatch = _hotWatch;
   this.proxyBaseUrl = proxyBaseUrl;
+  this.useLocal = useLocal;
   this.states = _states.filter(function (state) {
     return state.state !== undefined;
   });
@@ -1785,6 +1811,14 @@ var cli = function cli(cliArgs) {
       baseUrl: '/',
       port: 4001,
       proxyBaseUrl: proxyBaseUrl
+    });
+  });
+  program.command('local').description('acts as a proxy to the local Opti host at https://localhost:44319 ').action(function () {
+    startServer({
+      rootDir: './temp',
+      baseUrl: '/',
+      port: 4001,
+      useLocal: true
     });
   });
   program.command('list <rootDir>').description('list all routes to serve from folder <rootDir>').action(function (rootDir) {

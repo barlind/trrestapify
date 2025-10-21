@@ -1,0 +1,1 @@
+{"version":3,"file":"forLoopHelpers.d.ts","sourceRoot":"","sources":["../src/forLoopHelpers.ts"],"names":[],"mappings":"AAKA,MAAM,WAAW,aAAa;IAAG,CAAC,EAAE,MAAM,CAAC;IAAC,QAAQ,EAAE,MAAM,CAAC;IAAC,SAAS,EAAE,MAAM,CAAA;CAAE;AAEjF,eAAO,MAAM,yBAAyB,YAAa,MAAM,KAAG,aAAa,EAAE,GAAG,SAI7E,CAAA;AA4BD,eAAO,MAAM,oCAAoC,YAAa,MAAM,KAAG,MAKtE,CAAA"}

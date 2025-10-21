@@ -1,3 +1,0 @@
-#!/usr/bin/env node
-import { cli } from '../dist/index.esm.js';
-cli(process.argv);
